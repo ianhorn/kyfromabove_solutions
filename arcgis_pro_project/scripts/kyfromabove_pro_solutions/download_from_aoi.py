@@ -1,10 +1,10 @@
 """
 
 Author: Ian Horn
-Date: May 19, 2026
+Date: June 8, 2026
 
     1. Select an area of interest
-    2. Select intersecting tiles
+    2. Run stac api against geometry (point, line, polygon)
     3. Download imagery
 
 """
@@ -12,11 +12,13 @@ Date: May 19, 2026
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-import asyncio
-
+import requests
 import arcpy
 import pandas as pd
-import aiohttp
+from concurrent.futures import ThreadPoolExecutor\
+
+
+MAX_WORKERS = max(1, int(os.cpu_count() * 0.75))
 
 
 # -------------------------------------------------------------------
@@ -49,8 +51,8 @@ arcpy.AddMessage(f"Ensured folder exists: {DOWNLOAD_FOLDER}")
 # -------------------------------------------------------------------
 # Make feature layer
 
-We need to make sure the TILE_GRID layer is something pro 
-can work with.
+# We need to make sure the TILE_GRID layer is something pro 
+# can work with.
 # -------------------------------------------------------------------
 
 tile_layer = "tile_layer"
@@ -77,7 +79,7 @@ arcpy.management.SelectLayerByLocation(
 
 # -------------------------------------------------------------------
 # Selected rows -> pandas dataframe
-This makes a dataframe of just the aws urls.
+# This makes a dataframe of just the aws urls.
 # -------------------------------------------------------------------
 
 df_urls = pd.DataFrame(
@@ -90,67 +92,62 @@ arcpy.AddMessage(f"Found {len(df_urls)} tiles")
 
 # -------------------------------------------------------------------
 # Async download settings
-2 megabytes seems like a reasonable size.  Orthos can be up to 
-1 gb.
+# 2 megabytes seems like a reasonable size.  Orthos can be up to 
+# 1 gb.
 # -------------------------------------------------------------------
 
 CHUNK_SIZE_MB = 2
 CHUNK_SIZE = CHUNK_SIZE_MB * 1024 * 1024
 
 MAX_CONCURRENT_DOWNLOADS = int(os.cpu_count() * 0.75)
-SEM = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
 
 # -------------------------------------------------------------------
 # Download function
 # -------------------------------------------------------------------
 
-async def download_file(session, url, folder, chunk_size=CHUNK_SIZE):
-    async with SEM:
-        parsed = urlparse(url)
-        filename = Path(parsed.path).name
-        out_path = folder / filename
 
-        # Skip existing files
-        if out_path.exists():
-            arcpy.AddMessage(f"Skipping existing file: {filename}")
-            return
+def download_file(url, folder, chunk_size=CHUNK_SIZE):
+    parsed = urlparse(url)
+    filename = Path(parsed.path).name
+    out_path = folder / filename
 
-        arcpy.AddMessage(f"Downloading: {filename}")
+    if out_path.exists():
+        arcpy.AddMessage(f"Skipping existing file: {filename}")
+        return
 
-        async with session.get(url) as response:
-            response.raise_for_status()
+    arcpy.AddMessage(f"Downloading: {filename}")
 
-            async with aiofiles.open(out_path, "wb") as f:
-                async for chunk in response.content.iter_chunked(chunk_size):
-                    await f.write(chunk)
+    with requests.get(url, stream=True, timeout=1800) as response:
+        response.raise_for_status()
 
-        arcpy.AddMessage(f"Finished: {filename}")
+        with open(out_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+
+    arcpy.AddMessage(f"Finished: {filename}")
 
 
 # -------------------------------------------------------------------
 # Main async runner
 # -------------------------------------------------------------------
 
-async def main():
-
-    timeout = aiohttp.ClientTimeout(total=60 * 30)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        tasks = [
-            download_file(
-                session,
-                url,
-                DOWNLOAD_FOLDER
-            )
-            for url in df_urls[URL_FIELD]
-        ]
-        await asyncio.gather(*tasks)
+def main():
+    
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        executor.map(
+            lambda url: download_file(url, DOWNLOAD_FOLDER),
+            df_urls[URL_FIELD]
+        )
+        
 
 
 # -------------------------------------------------------------------
 # Run downloads
 # -------------------------------------------------------------------
 
-asyncio.run(main())
+if __name__ == "__main__":
+    main()
 
 arcpy.AddMessage("Downloads complete")

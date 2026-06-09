@@ -7,6 +7,8 @@ misc
 # C extensions
 *.so
 .DS_Store
+.vscode
+
 
 # Distribution / packaging
 .Python
@@ -143,4 +145,14 @@ cython_debug/
 *_import.xml
 Connections
 .backups
+GpMessages
+Index
 
+arcgis_pro_project/RasterFunctionsHistory
+arcgis_pro_project/ temp
+arcgis_pro_project/Index
+arcgis_pro_project/kyfomabove_solutions.gdb*
+stream_raster
+HAND
+arcgis_pro_project/Topography_Toolbox_Pro
+arcgis_pro_project/Index/kyfomabove_solutions_index
