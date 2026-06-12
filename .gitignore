@@ -143,4 +143,16 @@ cython_debug/
 *_import.xml
 Connections
 .backups
+HAND/*
+hand.*
+.vscode*
+Index
 
+
+
+Index/*
+RasterFunctionsHistory*
+stream_raster*
+*cog.t*
+*.gdb
+Topography_Toolbox_Pro*
